@@ -1,0 +1,157 @@
+% ------------------------------------------------------------
+\section{Experiments}
+\label{sec:experiments}
+% ------------------------------------------------------------
+
+\subsection{Setup}
+
+We evaluate DocPC primarily on the DocViRe benchmark described in Section~\ref{sec:dataset}. DocViRe contains document-level queries and multi-positive annotations across seven domains (biology, education, finance, government, industrial, legal, and research). Unless otherwise stated, we report NDCG@5 as the main effectiveness metric and also compute Recall@$K$ on the document ranking. All metrics are computed over ranked \emph{documents} rather than pages.
+
+\paragraph{Baselines.}
+We compare DocPC against three groups of baselines that differ in retrieval unit and scoring. \emph{Text-only document retrieval} includes a sparse lexical retriever (\textsc{BM25}), a dense retriever (\textsc{BGE-M3}), and their LLM-summary variants. \emph{Page-level visual retrieval with page aggregation} includes \textsc{Jina-CLIP} \citep{koukounas2024jinaclip}, \textsc{Nomic-Embed} \citep{nussbaum2024nomicembed}, zero-shot ColQwen-page, and DocViRe-tuned ColQwen-page variants with page aggregation. \emph{Document-level visual retrieval with composed grids} includes the document-level baseline \emph{ColQwen (DocViRe-sft, First-4)} and our method \emph{DocPC-ColQwen (First-4)}. Detailed baseline construction and scoring procedures are provided in Appendix~\ref{sec:app-baselines}.
+
+\paragraph{DocPC variants.}
+DocPC represents each document by a single grid image rather than a set of individual pages. Unless otherwise stated, DocPC composes $K=4$ representative pages into a $2{\times}2$ grid and treats this grid as the retrieval unit. We use \textbf{First-4} (the first four pages) as the default strategy. In page-level contexts, ``First-4'' refers to the first four pages used in score aggregation, whereas in document-level contexts it refers to the first four pages composed into a single grid. We also consider \textbf{Boundary} (First2+Last2) as an alternative representative-page strategy. Supplementary comparisons under alternative test-time representative-page strategies are reported in Appendix~\ref{sec:app-a2b}.
+
+\emph{Naming convention.} For model names with two tags, the first tag denotes the training setting and the second tag denotes the test-time page or grid selection strategy. Here, \emph{DocViRe-sft} denotes models fine-tuned on the DocViRe training split under the default First-4 training setting. For example, \emph{ColQwen (DocViRe-sft, First-4)} denotes a non-DocPC model trained with DocViRe-sft and evaluated with the First-4 strategy. For DocPC-ColQwen, we omit the training tag and report only the test-time strategy unless otherwise stated.
+
+\paragraph{Implementation details.}
+We start from a publicly available ColQwen checkpoint and fine-tune all VLM parameters on DocViRe using the combined multi-positive contrastive and listwise objectives in Section~\ref{sec:training-objectives}. For the main results in Table~\ref{tab:main-results}, the listwise ApproxNDCG loss is applied every $m{=}40$ optimization steps (see Section~\ref{sec:ablation} for the choice of $m$). Unless otherwise stated, page-level VLM baselines such as ColQwen-page are evaluated in zero-shot mode using the original checkpoints. The tuned ColQwen-page variants are fine-tuned on the DocViRe training split but still retain page-level indexing and MaxP aggregation, whereas DocPC variants are trained with composed document-level grids. 
+For fairness, all methods use the same underlying late-interaction scoring mechanism. Page-level baselines aggregate page scores into document scores with MaxP, whereas DocPC scores a single composed grid per document.
+
+\subsection{Main Results}
+
+DocPC outperforms page-level aggregation under the same supervision (Table~\ref{tab:main-results}). DocPC-ColQwen (First-4) attains 44.09 average NDCG@5, versus 38.91 for the strongest page-level baseline ColQwen-page (DocViRe-sft, Boundary). This indicates that the gain comes from document-level composed representation rather than more supervision. Unless otherwise stated, Table~\ref{tab:main-results} reports the final configuration. Some ablations in Section~\ref{sec:ablation} use alternative objectives to isolate factors. Similar gains are observed under different candidate-pool sizes (see Appendix~\ref{sec:app-a5}).
+
+% \begin{table*}[!t]
+%   \centering
+%   \footnotesize
+%   \setlength{\tabcolsep}{4pt}
+%   \caption{Main results on DocViRe (NDCG@5, \%) per domain and average. Text-only baselines use OCR text or LLM-generated document summaries. Page-level VLM baselines index individual pages and aggregate with MaxP. Document-level methods use a single 4-page grid per document. For model names with two tags, the first tag denotes the training setting and the second denotes the test-time page or grid strategy. DocPC-ColQwen (First-4) uses the First-4 grid as the best configuration (see Section~\ref{sec:ablation}). Overall best in bold.}
+%   \label{tab:main-results}
+%   \begin{tabular}{@{}lrrrrrrrr@{}}
+%     \toprule
+%     Model & Bio. & Edu. & Fin. & Gov. & Ind. & Leg. & Res. & Avg \\
+%     \midrule
+%     \multicolumn{9}{@{}l}{\itshape Text-only} \\
+%     \midrule
+%     \textsc{BGE-M3} & 41.30 & 39.77 & 20.59 & 23.13 & 31.61 & 29.09 & 47.95 & 33.35 \\
+%     \textsc{BM25}   & 35.36 & 37.48 & 24.08 & 19.94 & 33.35 & 29.96 & 46.97 & 32.45 \\
+%     BGE-M3 (LLM sum.) & 36.32 & 41.07 & 15.94 & 25.92 & 34.61 & 34.19 & 50.18 & 34.03 \\
+%     BM25 (LLM sum.)   & 31.96 & 40.17 & 17.96 & 24.06 & 35.76 & 34.18 & 44.79 & 32.70 \\
+%     \midrule
+%     \multicolumn{9}{@{}l}{\itshape Page-level VLM baselines} \\
+%     \midrule
+%     ColQwen-page (zero-shot, All pages)& \underline{50.98} & 33.92 & 22.83 & 27.04 & 10.02 & 37.98 & 56.40 & 34.17 \\
+%     ColQwen-page (zero-shot, Boundary) & \textbf{52.89} & 34.20 & 22.89 & 26.54 & 8.52 & 40.58 & 56.48 & 34.59 \\
+%     ColQwen-page (DocViRe-sft, All pages) & 46.01 & 37.90 & 30.36 & 30.89 & 20.53 & 44.78 & \underline{56.65} & 38.16 \\
+%     ColQwen-page (DocViRe-sft, Boundary) & 47.09 & 38.78 & \underline{32.18} & \underline{31.93} & 20.39 & \underline{46.51} & \textbf{57.42} & 38.91 \\
+%     \midrule
+%     \multicolumn{9}{@{}l}{\itshape Document-level VLM (4-page grids)} \\
+%     \midrule
+%     Jina-CLIP (zero-shot, First-4) & 20.35 & 23.86 & 10.92 & 10.10 & 25.18 & 13.20 & 31.36 & 19.28 \\
+%     Nomic-Embed (zero-shot, First-4) & 4.90 & 6.96 & 8.98 & 1.74 & 16.06 & 0.73 & 10.40 & 7.11 \\
+%     ColQwen (DocViRe-sft, First-4) & 42.24 & \textbf{46.86} & 30.22 & 31.93 & \underline{41.11} & 42.40 & 50.47 & \underline{40.75} \\
+%     \midrule
+%     \multicolumn{9}{@{}l}{\itshape Ours} \\
+%     \midrule
+%     \textbf{DocPC-ColQwen (First-4)} & 49.02 & \underline{46.44} & \textbf{33.46} & \textbf{33.25} & \textbf{47.44} & \textbf{46.64} & 52.41 & \textbf{44.09} \\
+%     \bottomrule
+%   \end{tabular}
+% \end{table*}
+
+\subsection{Efficiency and Footprint}
+\label{sec:efficiency-footprint}
+
+We compare DocPC with page-level ColQwen on the DocViRe test set.
+Relative to page-level indexing, DocPC reduces the number of indexed images from 38{,}746 to 3{,}850 and the number of indexed vectors from 29.25M to 2.91M, corresponding to about $10.1\times$ reductions in both.
+Although the composed 4-page grid slightly increases per-image encoding time, the much smaller number of indexed inputs substantially lowers overall indexing cost: end-to-end indexing time drops from 15{,}588~s to 2{,}034~s ($7.7\times$ faster), and Milvus storage decreases from 22.4~GB to 2.2~GB.
+These results show that DocPC provides a substantially more compact and efficient indexing scheme while preserving or improving retrieval effectiveness.
+A detailed breakdown is provided in Appendix~\ref{sec:app-a4-efficiency}, and additional results on resolution sensitivity are provided in Appendix~\ref{sec:app-a4-resolution}.
+
+\subsection{Ablation Studies}
+\label{sec:ablation}
+
+\paragraph{Controlled comparison with DocViRe-tuned page-level retrieval.}
+Under matched supervision, DocPC still substantially outperforms the best tuned page-level baseline (Table~\ref{tab:controlled-page}), indicating that the gain is from document-level composition rather than task-specific tuning alone.
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{Controlled comparison between DocViRe-tuned page-level ColQwen and DocPC-ColQwen on DocViRe (average NDCG@5).
+  Page-level models index individual pages and aggregate scores with MaxP. DocPC indexes a single 4-page grid per document.}
+  \label{tab:controlled-page}
+  \begin{tabular}{@{}lc@{}}
+    \toprule
+    Model & Avg \\
+    \midrule
+    ColQwen-page (DocViRe-sft, First-4)  & 37.68 \\
+    ColQwen-page (DocViRe-sft, Boundary) & 38.91 \\
+    ColQwen-page (DocViRe-sft, All pages) & 38.16 \\
+    DocPC-ColQwen (First-4)                     & \textbf{44.09} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Effect of representative page budget.}
+Table~\ref{tab:page-budget} (DocPC variants trained with Combined $m{=}5$, not directly comparable to Table~\ref{tab:main-results}) shows that more pages do not consistently help. A 4-page budget is the most reasonable choice in our setting.
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{Effect of representative page budget on DocPC-ColQwen on DocViRe (average NDCG@5, \%). All DocPC rows use Combined ($m{=}5$). Values are not directly comparable to Table~\ref{tab:main-results}.}
+  \label{tab:page-budget}
+  \begin{tabular}{@{}lc@{}}
+    \toprule
+    Model & Avg NDCG@5 \\
+    \midrule
+    DocPC-ColQwen (First-1) & 39.03 \\
+    DocPC-ColQwen (First-4) & 40.66 \\
+    DocPC-ColQwen (First-16) & 36.59 \\
+    DocPC-ColQwen (Base-Clip) & 40.73 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Training objectives.}
+As shown in Table~\ref{tab:loss-ablation}, training with the listwise objective alone is insufficient (37.32). Using only the multi-positive contrastive loss yields 42.68, indicating that it provides the primary supervisory signal. Among the combined settings, performance is not monotonic with respect to the listwise update frequency. Instead, the best result is obtained when the listwise term is applied sparsely, with Combined ($m{=}40$) achieving the highest average NDCG@5 of 44.09. Additional exploratory ablations and further discussion are provided in Appendix~\ref{sec:app-a4}.
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{Ablation on training objectives for DocPC-ColQwen on DocViRe (average NDCG@5, \%). ``Combined (m)'' denotes applying the top-$K$ listwise loss every $m$ steps in addition to the multi-positive contrastive loss.}
+  \label{tab:loss-ablation}
+  \begin{tabular}{@{}lc@{}}
+    \toprule
+    Variant & Avg \\
+    \midrule
+    Listwise only & 37.32 \\
+    Multi-positive only & 42.68 \\
+    % Combined (m=5) & 40.66 \\
+    % Combined (m=9) & 42.96 \\
+    % Combined (m=15) & 43.83 \\
+    Combined (m=40) & \textbf{44.09} \\
+    % Combined (m=50) & 42.83 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Performance by document length.}
+
+Table~\ref{tab:length-analysis} groups instances by relevant-document page count (counts are positive documents only). Performance is highest for mid-length documents (11 to 20 pages), followed by documents with more than 20 pages, while documents with at most 10 pages yield the lowest average NDCG@5.
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{Performance by the page count of relevant documents (NDCG@5, \%). \#Docs counts unique positive documents only. A query may appear in multiple bins if its relevant documents fall into different length groups.}
+  \label{tab:length-analysis}
+  \begin{tabular}{@{}lrrr@{}}
+    \toprule
+    Group & Docs & Queries & NDCG@5 \\
+    \midrule
+    $\leq$10 pages  & 570 & 1721 & 37.57 \\
+    11 to 20 pages  & 248 & 988 & 44.55 \\
+    $>$20 pages     & 79 & 317 & 40.62 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
